@@ -42,11 +42,12 @@ def process_meal_analysis(meal_id: int, local_path: str):
     db = SessionLocal()
     try:
         import asyncio
-        items = asyncio.get_event_loop().run_until_complete(analyze_food_image_text(local_path))
+        items = asyncio.run(analyze_food_image_text(local_path))
         nutrition, mapped = map_items_to_nutrition(items)
         crud.update_meal_analysis(db, meal_id, mapped, nutrition, status="done")
     except Exception as e:
         crud.update_meal_analysis(db, meal_id, [], {}, status="failed")
+        print(f"Error processing meal {meal_id}: {type(e).__name__} - {e}")
     finally:
         db.close()
 

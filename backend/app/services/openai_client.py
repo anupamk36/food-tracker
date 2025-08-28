@@ -1,10 +1,6 @@
 import os, base64, json, asyncio
 from app.core.config import settings
-
-try:
-    import openai
-except Exception as e:
-    openai = None
+from openai import OpenAI
 
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY') or settings.openai_api_key
 
@@ -14,7 +10,7 @@ async def analyze_food_image_text(local_path: str):
     This function uses the OpenAI chat/completions endpoint and asks the model
     to return JSON. If OPENAI_API_KEY is not set, this falls back to a dummy response.
     """
-    if not OPENAI_API_KEY or openai is None:
+    if not OPENAI_API_KEY:
         # fallback: return dummy items
         return [
             {"name": "Grilled Chicken", "serving": "150g"},
@@ -22,7 +18,7 @@ async def analyze_food_image_text(local_path: str):
             {"name": "Broccoli", "serving": "1 cup"}
         ]
 
-    openai.api_key = OPENAI_API_KEY
+    client = OpenAI(api_key=OPENAI_API_KEY)
 
     # Read and encode image
     with open(local_path, 'rb') as f:
@@ -37,29 +33,27 @@ async def analyze_food_image_text(local_path: str):
     # Build a prompt with the image as a data URL
     messages = [
         {"role": "system", "content": system},
-        {"role": "user", "content": user + "Image data URL follows:\n" + data_url}
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": user},
+                {"type": "image_url", "image_url": {"url": data_url}},
+            ],
+        },
     ]
 
-    # Use ChatCompletion if available
+    # Use ChatCompletion
     try:
-        resp = openai.ChatCompletion.create(
+        resp = client.chat.completions.create(
             model="gpt-4o-mini",  # change to desired model
             messages=messages,
             max_tokens=800,
             temperature=0.0,
         )
-        text = resp.choices[0].message['content'] if 'message' in resp.choices[0] else resp.choices[0].text
-    except AttributeError:
-        # fallback older API surface:
-        resp = openai.Completion.create(
-            model="gpt-4o-mini",
-            prompt=messages[1]['content'],
-            max_tokens=800,
-            temperature=0.0,
-        )
-        text = resp.choices[0].text
+        print("Response from the OpenAI API:", resp)
+        text = resp.choices[0].message.content
     except Exception as e:
-        raise
+        raise e
 
     # parse JSON from model output
     try:
