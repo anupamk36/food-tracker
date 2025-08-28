@@ -1,0 +1,6 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.input { display:block; width:100%; padding:8px; margin-bottom:8px; border:1px solid #ddd; border-radius:4px;}
+.btn { background:#2563eb; color:white; padding:8px 12px; border-radius:6px;}
