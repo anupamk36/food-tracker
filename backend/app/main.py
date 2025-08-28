@@ -1,21 +1,23 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api.v1 import auth as auth_router, meals as meals_router
-from app.db import engine, Base
-import os
+from app.api import auth, meals, users
 
-# Create DB tables if not present (simple)
-Base.metadata.create_all(bind=engine)
+app = FastAPI(title="Food Tracker API", version="1.0.0")
 
-app = FastAPI(title=settings.PROJECT_NAME)
+origins = [o.strip() for o in settings.cors_origins if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins or ["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-origins = [settings.CORS_ORIGINS] if isinstance(settings.CORS_ORIGINS, str) else settings.CORS_ORIGINS
-app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(meals.router, prefix="/api/meals", tags=["meals"])
+app.include_router(users.router, prefix="/api/users", tags=["users"])
 
-app.include_router(auth_router.router, prefix="/api/auth", tags=["auth"])
-app.include_router(meals_router.router, prefix="/api/meals", tags=["meals"])
-
-@app.get("/")
-def root():
+@app.get("/api/health")
+def health():
     return {"status": "ok"}

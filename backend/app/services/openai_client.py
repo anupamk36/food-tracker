@@ -1,39 +1,81 @@
-import openai
+import os, base64, json, asyncio
 from app.core.config import settings
-import json
 
-openai.api_key = settings.OPENAI_API_KEY
+try:
+    import openai
+except Exception as e:
+    openai = None
 
-async def analyze_food_image_text(image_path: str) -> list:
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY') or settings.openai_api_key
+
+async def analyze_food_image_text(local_path: str):
+    """Send image to OpenAI and request a structured nutrition analysis.
+    Returns a list of detected items (name, serving) or raises an exception.
+    This function uses the OpenAI chat/completions endpoint and asks the model
+    to return JSON. If OPENAI_API_KEY is not set, this falls back to a dummy response.
     """
-    Sends image to OpenAI's image/multimodal endpoint and expects a JSON array of
-    items of form {"item": "chicken breast", "portion_g": 150, "confidence": 0.9}
-    Implementation uses text-based prompt via image->text. Adapt to your client version.
-    """
-    # This is a pragmatic implementation using the "response" text. Replace with the
-    # preferred official call for your openai client version, e.g., client.responses.create(...)
-    with open(image_path, "rb") as f:
-        image_bytes = f.read()
+    if not OPENAI_API_KEY or openai is None:
+        # fallback: return dummy items
+        return [
+            {"name": "Grilled Chicken", "serving": "150g"},
+            {"name": "Steamed Rice", "serving": "1 cup"},
+            {"name": "Broccoli", "serving": "1 cup"}
+        ]
 
-    prompt = (
-        "You are a nutrition assistant. Given the following image, list the food items present and for each give "
-        "an estimated portion in grams. Output only valid JSON array, e.g. "
-        '[{"item":"boiled rice","portion_g":200,"confidence":0.8}, ...]'
-    )
+    openai.api_key = OPENAI_API_KEY
 
-    # Simple approach: use the text completion endpoint (adapt if your client supports direct image multimodal)
-    resp = openai.ChatCompletion.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are a helpful nutrition assistant."},
-            {"role": "user", "content": prompt}
-        ],
-    )
-    text = ""
-    if resp and "choices" in resp and len(resp["choices"])>0:
-        text = resp["choices"][0]["message"]["content"]
+    # Read and encode image
+    with open(local_path, 'rb') as f:
+        img_bytes = f.read()
+    b64 = base64.b64encode(img_bytes).decode('ascii')
+    data_url = f"data:image/jpeg;base64,{b64}"
+
+    system = "You are an assistant that extracts food items and nutrition facts from images. Respond with valid JSON only, for example: {'items':[{'name':'Chicken','serving':'150g'}]}"
+    user = ("Analyze the food in the provided image. Return a JSON object with a top-level key 'items' which is a list of objects with 'name' and 'serving'.\n"
+            "Also include a top-level 'nutrition' object with calories, protein_g, carbs_g, fat_g when possible.\n"
+            "Only return JSON.\n")
+    # Build a prompt with the image as a data URL
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user + "Image data URL follows:\n" + data_url}
+    ]
+
+    # Use ChatCompletion if available
     try:
-        data = json.loads(text)
-        return data
+        resp = openai.ChatCompletion.create(
+            model="gpt-4o-mini",  # change to desired model
+            messages=messages,
+            max_tokens=800,
+            temperature=0.0,
+        )
+        text = resp.choices[0].message['content'] if 'message' in resp.choices[0] else resp.choices[0].text
+    except AttributeError:
+        # fallback older API surface:
+        resp = openai.Completion.create(
+            model="gpt-4o-mini",
+            prompt=messages[1]['content'],
+            max_tokens=800,
+            temperature=0.0,
+        )
+        text = resp.choices[0].text
+    except Exception as e:
+        raise
+
+    # parse JSON from model output
+    try:
+        parsed = json.loads(text)
+        # ensure items list present
+        items = parsed.get('items', [])
+        return items if items is not None else []
     except Exception:
-        return []
+        # attempt to extract JSON fragment from text
+        import re
+        m = re.search(r'\{.*\}', text, flags=re.S)
+        if m:
+            try:
+                parsed = json.loads(m.group(0))
+                return parsed.get('items', [])
+            except Exception:
+                pass
+    # if parsing fails, return empty list
+    return []

@@ -1,23 +1,17 @@
-import os
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
+from pydantic import Field
 from typing import List
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "food-nutrition-app"
-    DATABASE_URL: str
-    OPENAI_API_KEY: str | None = None
-    JWT_SECRET: str
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
-    UPLOAD_DIR: str = "./uploads"
-    S3_ENABLED: bool = False
-    S3_BUCKET: str | None = None
-    S3_REGION: str | None = None
-    S3_ACCESS_KEY: str | None = None
-    S3_SECRET_KEY: str | None = None
-    CORS_ORIGINS: str = "http://localhost:3000"
+    secret_key: str = Field(..., env="SECRET_KEY")
+    algorithm: str = Field("HS256", env="ALGORITHM")
+    access_token_expire_minutes: int = Field(60, env="ACCESS_TOKEN_EXPIRE_MINUTES")
+    database_url: str = Field(..., env="DATABASE_URL")
+    cors_origins: List[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    openai_api_key: str | None = None
 
     class Config:
         env_file = ".env"
+        extra = "ignore"
 
 settings = Settings()
