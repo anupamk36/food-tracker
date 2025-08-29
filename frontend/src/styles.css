@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 .btn { @apply px-4 py-2 rounded-xl shadow bg-indigo-600 text-white hover:bg-indigo-700 transition; }
 .card { @apply bg-white rounded-2xl shadow p-6; }
