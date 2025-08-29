@@ -1,75 +1,127 @@
-import os, base64, json, asyncio
-from app.core.config import settings
+# app/services/openai_client.py
+import json
+import re
+from typing import Any, Dict, List, Optional, Tuple
+
 from openai import OpenAI
+import os
 
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY') or settings.openai_api_key
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=OPENAI_API_KEY)
 
-async def analyze_food_image_text(local_path: str):
-    """Send image to OpenAI and request a structured nutrition analysis.
-    Returns a list of detected items (name, serving) or raises an exception.
-    This function uses the OpenAI chat/completions endpoint and asks the model
-    to return JSON. If OPENAI_API_KEY is not set, this falls back to a dummy response.
+_JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+
+def _parse_json_from_text(text: str) -> Optional[Dict[str, Any]]:
     """
-    if not OPENAI_API_KEY:
-        # fallback: return dummy items
-        return [
-            {"name": "Grilled Chicken", "serving": "150g"},
-            {"name": "Steamed Rice", "serving": "1 cup"},
-            {"name": "Broccoli", "serving": "1 cup"}
-        ]
+    Accepts raw assistant text. Tries to extract JSON, including:
+      - full content is JSON
+      - JSON inside ```json ... ```
+      - minor trailing punctuation/whitespace
+    Returns dict or None.
+    """
+    if not text:
+        return None
 
-    client = OpenAI(api_key=OPENAI_API_KEY)
+    # Try code-fence first
+    m = _JSON_BLOCK_RE.search(text)
+    if m:
+        snippet = m.group(1).strip()
+        try:
+            return json.loads(snippet)
+        except json.JSONDecodeError:
+            pass
 
-    # Read and encode image
-    with open(local_path, 'rb') as f:
-        img_bytes = f.read()
-    b64 = base64.b64encode(img_bytes).decode('ascii')
-    data_url = f"data:image/jpeg;base64,{b64}"
-
-    system = "You are an assistant that extracts food items and nutrition facts from images. Respond with valid JSON only, for example: {'items':[{'name':'Chicken','serving':'150g'}]}"
-    user = ("Analyze the food in the provided image. Return a JSON object with a top-level key 'items' which is a list of objects with 'name' and 'serving'.\n"
-            "Also include a top-level 'nutrition' object with calories, protein_g, carbs_g, fat_g when possible.\n"
-            "Only return JSON.\n")
-    # Build a prompt with the image as a data URL
-    messages = [
-        {"role": "system", "content": system},
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": user},
-                {"type": "image_url", "image_url": {"url": data_url}},
-            ],
-        },
-    ]
-
-    # Use ChatCompletion
+    # Try whole content as JSON
+    s = text.strip()
+    # trim any leading/trailing backticks
+    s = s.strip("`")
     try:
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",  # change to desired model
-            messages=messages,
-            max_tokens=800,
-            temperature=0.0,
-        )
-        print("Response from the OpenAI API:", resp)
-        text = resp.choices[0].message.content
-    except Exception as e:
-        raise e
+        return json.loads(s)
+    except json.JSONDecodeError:
+        return None
 
-    # parse JSON from model output
-    try:
-        parsed = json.loads(text)
-        # ensure items list present
-        items = parsed.get('items', [])
-        return items if items is not None else []
-    except Exception:
-        # attempt to extract JSON fragment from text
-        import re
-        m = re.search(r'\{.*\}', text, flags=re.S)
-        if m:
-            try:
-                parsed = json.loads(m.group(0))
-                return parsed.get('items', [])
-            except Exception:
-                pass
-    # if parsing fails, return empty list
-    return []
+def _normalize_items_nutrition(obj: Any) -> Tuple[Optional[List[Dict[str, Any]]], Optional[Dict[str, Any]]]:
+    """
+    Accepts various shapes and normalizes to (items, nutrition).
+      - {"items":[...], "nutrition": {...}}
+      - {"items":[...]}  (nutrition None)
+      - [{"name":...}, ...]  (items only)
+      - string content with JSON → parsed
+    """
+    # If it’s a string, try parse
+    if isinstance(obj, str):
+        parsed = _parse_json_from_text(obj)
+        if parsed is not None:
+            return _normalize_items_nutrition(parsed)
+        return None, None
+
+    # If it’s already a dict with keys
+    if isinstance(obj, dict):
+        items = obj.get("items")
+        nutrition = obj.get("nutrition")
+        # items might be a dict in bad generations; coerce to list if so
+        if isinstance(items, dict):
+            items = [items]
+        if items is not None and not isinstance(items, list):
+            items = None
+        if nutrition is not None and not isinstance(nutrition, dict):
+            nutrition = None
+        return items, nutrition
+
+    # If it’s a list, assume it's the items list
+    if isinstance(obj, list):
+        return obj, None
+
+    return None, None
+
+async def analyze_food_image_text(local_path: str) -> Dict[str, Any]:
+    """
+    Returns a dict with keys:
+      { "items": [...], "nutrition": {...} }
+    If the model returns only one of them, the missing key will be absent.
+    """
+    # You may already be sending the image; leaving the exact call as-is is fine.
+    # The key point is: parse the assistant message content.
+
+    # EXAMPLE: using text-only instruction with an image URL/file you uploaded earlier.
+    # Replace this with your existing call if you already handle the image upload to OpenAI storage.
+    resp = client.chat.completions.create(
+        model="gpt-4o-mini-2024-07-18",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a nutrition extractor. Reply ONLY with minified JSON matching:\n"
+                    '{"items":[{"name":"string","serving":"string"}],'
+                    '"nutrition":{"calories":number,"protein_g":number,"carbs_g":number,"fat_g":number}}'
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Analyze this meal image at local path (for context only): {local_path}",
+            },
+        ],
+        temperature=0.2,
+    )
+
+    # ---- robust parsing of assistant content ----
+    msg = resp.choices[0].message
+    content_text = getattr(msg, "content", None)
+
+    items, nutrition = _normalize_items_nutrition(content_text)
+
+    # If still empty, try to see if SDK object was directly returned somehow
+    if items is None and nutrition is None:
+        # users sometimes print resp dict-like; try to parse again from str
+        try:
+            as_text = str(content_text)
+            items, nutrition = _normalize_items_nutrition(as_text)
+        except Exception:
+            pass
+
+    result: Dict[str, Any] = {}
+    if items is not None:
+        result["items"] = items
+    if nutrition is not None:
+        result["nutrition"] = nutrition
+    return result

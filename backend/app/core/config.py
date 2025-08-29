@@ -7,8 +7,9 @@ class Settings(BaseSettings):
     algorithm: str = Field("HS256", env="ALGORITHM")
     access_token_expire_minutes: int = Field(60, env="ACCESS_TOKEN_EXPIRE_MINUTES")
     database_url: str = Field(..., env="DATABASE_URL")
-    cors_origins: List[str] = Field(default_factory=lambda: ["http://localhost:5173"])
-    openai_api_key: str | None = None
+    # allow comma-separated env like: http://localhost:5173,http://127.0.0.1:5173
+    cors_origins: List[str] = Field(default_factory=lambda: ["http://localhost:5173"], env="CORS_ORIGINS")
+    openai_api_key: str | None = Field(default=None, env="OPENAI_API_KEY")
 
     class Config:
         env_file = ".env"

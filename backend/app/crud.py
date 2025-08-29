@@ -13,26 +13,52 @@ def create_user(db: Session, email: str, password_hash: str) -> models.User:
     db.refresh(user)
     return user
 
-def create_meal(db: Session, owner_id: int, image_path: str | None, notes: str | None) -> models.Meal:
-    meal = models.Meal(owner_id=owner_id, image_path=image_path, notes=notes, status="pending")
+def create_meal(
+    db: Session,
+    owner_id: int,
+    image_path: str | None,
+    notes: str | None,
+    items: List[Dict[str, Any]] | None = None,
+    nutrition: Dict[str, Any] | None = None,
+    status: str = "pending",
+) -> models.Meal:
+    meal = models.Meal(
+        owner_id=owner_id,
+        image_path=image_path,
+        notes=notes,
+        items=items,
+        nutrition=nutrition,
+        status=status,
+    )
     db.add(meal)
     db.commit()
     db.refresh(meal)
     return meal
 
-def update_meal_analysis(db: Session, meal_id: int, items: List[Dict[str, Any]], nutrition: Dict[str, Any], status: str = "done"):
+# app/crud.py
+def update_meal_analysis(db: Session, meal_id: int, items, nutrition, status: str = "done"):
     meal = db.get(models.Meal, meal_id)
     if not meal:
         return None
-    meal.items = items
-    meal.nutrition = nutrition
+    if items is not None:
+        meal.items = items           # <-- list of dicts, not json.dumps
+    if nutrition is not None:
+        meal.nutrition = nutrition   # <-- dict, not json.dumps
     meal.status = status
     db.commit()
     db.refresh(meal)
     return meal
 
+
+
 def get_meal(db: Session, meal_id: int) -> Optional[models.Meal]:
     return db.get(models.Meal, meal_id)
 
-def list_meals(db: Session, owner_id: int):
-    return db.execute(select(models.Meal).where(models.Meal.owner_id == owner_id).order_by(models.Meal.timestamp.desc())).scalars().all()
+def list_meals(db: Session, owner_id: int) -> List[models.Meal]:
+    return (
+        db.execute(
+            select(models.Meal)
+            .where(models.Meal.owner_id == owner_id)
+            .order_by(models.Meal.timestamp.desc())
+        ).scalars().all()
+    )

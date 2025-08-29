@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, ConfigDict
-from typing import Optional, Any, List
+from typing import Optional, Any, List, Dict
 from datetime import datetime
 
 class Token(BaseModel):
@@ -22,16 +22,21 @@ class UserOut(BaseModel):
 class MealCreate(BaseModel):
     notes: Optional[str] = None
 
-class MealOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class MealBase(BaseModel):
     id: int
     owner_id: int
-    image_path: Optional[str]
+    image_path: Optional[str] = None
     status: str
     timestamp: datetime
-    items: Any | None = None
-    nutrition: Any | None = None
+    items: Optional[List[Dict[str, Any]]] = None
+    nutrition: Optional[Dict[str, Any]] = None
     notes: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class MealOut(MealBase):
+    pass
 
 class MealsList(BaseModel):
     items: List[MealOut]

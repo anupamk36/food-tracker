@@ -7,6 +7,7 @@ COPY package.json package-lock.json* ./
 
 # Force clean install, ensure vite is included
 RUN rm -rf node_modules package-lock.json && npm install --legacy-peer-deps vite
+# RUN npm ci
 
 COPY . .
 
