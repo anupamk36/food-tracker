@@ -1,4 +1,5 @@
 # 🍽️ Food Nutrition Tracker
+<img width="1677" height="906" alt="Screenshot 2025-09-01 at 10 53 54 AM" src="https://github.com/user-attachments/assets/bde36320-9e11-46fb-af3b-f756a0cfab42" />
 
 A full-stack web application that allows users to upload images of meals, automatically extracts food items and their nutritional information using the **OpenAI API**, and visualizes dietary data (calories, protein, carbs, fats) with a modern dashboard.
 
